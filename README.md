@@ -10,6 +10,7 @@ This Chrome extension extracts the visible problem text and images, opens ChatGP
 ## Options 
 - Click the extension icon to open options
 - You can enable/disable auto submit
+- See info 
 
 ## Behavior
 - Detects problem text, options, and a single image.
