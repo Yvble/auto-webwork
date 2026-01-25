@@ -1,11 +1,15 @@
-# Auto WebWork Study Helper (Local HTML)
+# Automatic WebWork 
 
-This Chrome extension extracts the visible problem text and images, opens ChatGPT with a prefilled prompt, and **does not auto-send** when an image is detected so you can drag-drop the image manually.
+This Chrome extension extracts the visible problem text and images, opens ChatGPT and gets the awnser then inputs the answer into WebWork.
 
 ## Setup
 1. Open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked** and select this folder.
 5. Click **Send to ChatGPT** on the page.
+
+## Options 
+- Click the extension icon to open options
+- You can enable/disable auto submit
 
 ## Behavior
 - Detects problem text, options, and a single image.
