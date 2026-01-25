@@ -265,7 +265,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-addHelperButton();
+if (isWebWorkPage()) {
+  addHelperButton();
+}
+
+function isWebWorkPage() {
+  const host = window.location.hostname.toLowerCase();
+  if (host.includes("webwork")) return true;
+  return Boolean(document.querySelector("#problemMainForm"));
+}
 
 function fillAnswer(answer) {
   const container = findProblemContainer();
