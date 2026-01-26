@@ -1,4 +1,4 @@
-# Automatic WebWork 
+# WebWork AutoSolve 
 
 This Chrome extension extracts the visible problem text and images, opens ChatGPT and gets the awnser then inputs the answer into WebWork.
 
