@@ -122,3 +122,8 @@ footer {
 .status {
   color: #9cc1ff;
 }
+
+.toggle input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}

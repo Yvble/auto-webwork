@@ -21,10 +21,15 @@
         <p>Control how answers are filled after ChatGPT responds.</p>
 
         <label class="toggle">
+          <input type="checkbox" id="fullAuto" />
+          <span>FULL-AUTO</span>
+        </label>
+        <div class="hint">Automatically continues to the next problem and repeats.</div>
+        <label class="toggle">
           <input type="checkbox" id="autoSubmit" />
           <span>Auto submit after fill</span>
         </label>
-        <div class="hint">Clicks the WebWork “Submit Answers” button.</div>
+        <div class="hint">Clicks the WebWork "Submit Answers" button.</div>
       </div>
 
       <div class="settings-section">
@@ -34,7 +39,7 @@
           fills your answers in WeBWorK format.
         </p>
         <ul class="tips">
-          <li>Open a WebWork problem before clicking “Send to ChatGPT”.</li>
+          <li>Open a WebWork problem before clicking "Send to ChatGPT".</li>
           <li>Always review answers before submitting.</li>
         </ul>
       </div>

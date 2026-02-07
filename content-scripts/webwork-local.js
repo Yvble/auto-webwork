@@ -1,4 +1,10 @@
 let lastImageOpenedSrc = null;
+const FULL_AUTO_STATE_KEY = "awwFullAutoState";
+const FULL_AUTO_LAST_RUN_KEY = "awwFullAutoLastRun";
+const FULL_AUTO_STATE_IDLE = "idle";
+const FULL_AUTO_STATE_RUNNING = "running";
+const FULL_AUTO_STATE_AWAITING_NEXT = "awaiting_next";
+const FULL_AUTO_BAR_ID = "auto-webwork-full-auto-bar";
 
 function addHelperButton() {
   const btn = document.createElement("button");
@@ -15,25 +21,203 @@ function addHelperButton() {
   btn.style.padding = "10px 12px";
   btn.style.cursor = "pointer";
   btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.25)";
-  btn.addEventListener("click", async () => {
-    const qData = await parseQuestion();
-    if (!qData) return;
-
-    if (qData.hasImage && qData.imageSrc) {
-      openImageTabOnce(qData.imageSrc);
-    }
-
-    chrome.runtime.sendMessage({ type: "openChatGPTTab" }, () => {
-      setTimeout(() => {
-        chrome.runtime.sendMessage({
-          type: "sendQuestionToChatGPT",
-          question: qData,
-        });
-      }, 500);
-    });
+  btn.addEventListener("click", () => {
+    startQuestionFlow({ isAuto: false });
   });
 
   document.body.appendChild(btn);
+}
+
+function ensureFullAutoBar() {
+  let bar = document.getElementById(FULL_AUTO_BAR_ID);
+  if (bar) return bar;
+
+  bar = document.createElement("div");
+  bar.id = FULL_AUTO_BAR_ID;
+  bar.style.position = "fixed";
+  bar.style.top = "16px";
+  bar.style.right = "16px";
+  bar.style.zIndex = "999999";
+  bar.style.display = "none";
+  bar.style.alignItems = "center";
+  bar.style.gap = "8px";
+  bar.style.padding = "8px 10px";
+  bar.style.borderRadius = "10px";
+  bar.style.background = "#0f172a";
+  bar.style.color = "#e2e8f0";
+  bar.style.border = "1px solid #334155";
+  bar.style.boxShadow = "0 6px 16px rgba(0,0,0,0.25)";
+  bar.style.fontSize = "12px";
+
+  const label = document.createElement("span");
+  label.textContent = "FULL-AUTO ON";
+  label.style.fontWeight = "600";
+
+  const stopBtn = document.createElement("button");
+  stopBtn.type = "button";
+  stopBtn.textContent = "Stop";
+  stopBtn.style.background = "#dc2626";
+  stopBtn.style.color = "#fff";
+  stopBtn.style.border = "none";
+  stopBtn.style.padding = "4px 8px";
+  stopBtn.style.borderRadius = "6px";
+  stopBtn.style.cursor = "pointer";
+  stopBtn.addEventListener("click", () => {
+    setFullAutoState(FULL_AUTO_STATE_IDLE);
+    if (!chrome?.storage?.sync) return;
+    chrome.storage.sync.set({ fullAuto: false }, () => {
+      if (chrome.runtime.lastError) return;
+      alert("FULL-AUTO turned off.");
+    });
+  });
+
+  bar.appendChild(label);
+  bar.appendChild(stopBtn);
+  document.body.appendChild(bar);
+  return bar;
+}
+
+function updateFullAutoBar(isEnabled) {
+  const bar = ensureFullAutoBar();
+  bar.style.display = isEnabled ? "flex" : "none";
+}
+
+function bindFullAutoBar() {
+  ensureFullAutoBar();
+  getAutomationSettings().then((settings) => {
+    updateFullAutoBar(settings.fullAuto);
+    if (!settings.fullAuto) {
+      setFullAutoState(FULL_AUTO_STATE_IDLE);
+      return;
+    }
+
+    const state = getFullAutoState();
+    if (state === FULL_AUTO_STATE_IDLE) {
+      setFullAutoState(FULL_AUTO_STATE_RUNNING);
+    }
+  });
+
+  if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "sync" || !changes.fullAuto) return;
+      const isEnabled = Boolean(changes.fullAuto.newValue);
+      updateFullAutoBar(isEnabled);
+      if (isEnabled) {
+        const state = getFullAutoState();
+        if (state === FULL_AUTO_STATE_IDLE) {
+          setFullAutoState(FULL_AUTO_STATE_RUNNING);
+        }
+      } else {
+        setFullAutoState(FULL_AUTO_STATE_IDLE);
+      }
+    });
+  }
+}
+
+function getFullAutoState() {
+  try {
+    return localStorage.getItem(FULL_AUTO_STATE_KEY) || FULL_AUTO_STATE_IDLE;
+  } catch (e) {
+    return FULL_AUTO_STATE_IDLE;
+  }
+}
+
+function setFullAutoState(state) {
+  try {
+    localStorage.setItem(FULL_AUTO_STATE_KEY, state);
+  } catch (e) {}
+}
+
+function getLastAutoRunFingerprint() {
+  try {
+    return localStorage.getItem(FULL_AUTO_LAST_RUN_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function setLastAutoRunFingerprint(fingerprint) {
+  try {
+    localStorage.setItem(FULL_AUTO_LAST_RUN_KEY, fingerprint || "");
+  } catch (e) {}
+}
+
+function alertLastQuestionReached() {
+  alert("FULL-AUTO done: last question reached. No next problem was found.");
+}
+
+function getQuestionFingerprint(qData) {
+  return [
+    window.location.pathname,
+    qData.type || "",
+    String(qData.question || "").slice(0, 2000),
+  ].join("|");
+}
+
+function getAutomationSettings() {
+  return new Promise((resolve) => {
+    if (!chrome?.storage?.sync) {
+      resolve({ autoSubmit: false, fullAuto: false });
+      return;
+    }
+
+    chrome.storage.sync.get(
+      { autoSubmit: false, fullAuto: false },
+      (settings) => {
+        if (chrome.runtime.lastError) {
+          resolve({ autoSubmit: false, fullAuto: false });
+          return;
+        }
+
+        resolve({
+          autoSubmit: Boolean(settings.autoSubmit),
+          fullAuto: Boolean(settings.fullAuto),
+        });
+      }
+    );
+  });
+}
+
+async function startQuestionFlow({ isAuto }) {
+  const qData = await parseQuestion();
+  if (!qData) return false;
+
+  const settings = await getAutomationSettings();
+  const state = getFullAutoState();
+  const fullAutoActive =
+    settings.fullAuto ||
+    isAuto ||
+    state === FULL_AUTO_STATE_RUNNING ||
+    state === FULL_AUTO_STATE_AWAITING_NEXT;
+
+  if (fullAutoActive && qData.hasImage) {
+    scheduleNextQuestionAdvance();
+    return false;
+  }
+
+  if (fullAutoActive) {
+    const fingerprint = getQuestionFingerprint(qData);
+    const lastRun = getLastAutoRunFingerprint();
+    if (lastRun && lastRun === fingerprint) {
+      return false;
+    }
+    setLastAutoRunFingerprint(fingerprint);
+  }
+
+  if (qData.hasImage && qData.imageSrc) {
+    openImageTabOnce(qData.imageSrc);
+  }
+
+  chrome.runtime.sendMessage({ type: "openChatGPTTab" }, () => {
+    setTimeout(() => {
+      chrome.runtime.sendMessage({
+        type: "sendQuestionToChatGPT",
+        question: qData,
+      });
+    }, 500);
+  });
+
+  return true;
 }
 
 async function parseQuestion() {
@@ -254,7 +438,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
       }
 
-      maybeAutoSubmit().then(() => {
+      maybeAutoSubmit().then((automation) => {
+        if (automation.fullAuto) {
+          scheduleNextQuestionAdvance();
+        }
         sendResponse({ received: true });
       });
       return true;
@@ -267,12 +454,181 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 if (isWebWorkPage()) {
   addHelperButton();
+  bindFullAutoBar();
+  bindManualProblemSelectionGuard();
+  initFullAutoMode();
 }
 
 function isWebWorkPage() {
   const host = window.location.hostname.toLowerCase();
   if (host.includes("webwork")) return true;
   return Boolean(document.querySelector("#problemMainForm"));
+}
+
+function getElementText(el) {
+  if (!el) return "";
+  if (typeof el.value === "string" && el.value.trim()) return el.value.trim();
+  return (el.textContent || "").trim();
+}
+
+function disableFullAutoForManualProblemSelection() {
+  if (!chrome?.storage?.sync) return;
+
+  chrome.storage.sync.get({ fullAuto: false }, (settings) => {
+    if (chrome.runtime.lastError || !settings.fullAuto) return;
+
+    setFullAutoState(FULL_AUTO_STATE_IDLE);
+    chrome.storage.sync.set({ fullAuto: false }, () => {
+      if (chrome.runtime.lastError) return;
+      alert("FULL-AUTO turned off: manual problem selection detected.");
+    });
+  });
+}
+
+function bindManualProblemSelectionGuard() {
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!event.isTrusted) return;
+      const target = event.target;
+      if (!target || typeof target.closest !== "function") return;
+
+      const problemLink = target.closest(".problem-list a[href]");
+      if (!problemLink) return;
+
+      disableFullAutoForManualProblemSelection();
+    },
+    true
+  );
+}
+
+function findNextProblemFromProblemList() {
+  const directNext =
+    document.querySelector(".problem-list li.currentProblem + li a[href]") ||
+    document.querySelector(".problem-list li.active + li a[href]");
+  if (directNext) return directNext;
+
+  const current = document.querySelector(
+    ".problem-list li.currentProblem, .problem-list li.active"
+  );
+  if (!current) return null;
+
+  let nextLi = current.nextElementSibling;
+  while (nextLi) {
+    const link = nextLi.querySelector("a[href]");
+    if (link) return link;
+    nextLi = nextLi.nextElementSibling;
+  }
+
+  return null;
+}
+
+function isAtEndOfProblemList() {
+  const hasCurrent = Boolean(
+    document.querySelector(".problem-list li.currentProblem, .problem-list li.active")
+  );
+  if (!hasCurrent) return false;
+  return !findNextProblemFromProblemList();
+}
+
+function findNextQuestionControl() {
+  const nextFromList = findNextProblemFromProblemList();
+  if (nextFromList) return nextFromList;
+
+  const form = document.querySelector("#problemMainForm");
+  const scoped = form || document;
+
+  const directCandidates = [
+    "#nextProblem_id",
+    'input[name="nextProblem"]',
+    'button[name="nextProblem"]',
+    'a[rel="next"]',
+    'button[rel="next"]',
+  ];
+
+  for (const selector of directCandidates) {
+    const el = scoped.querySelector(selector);
+    if (el) return el;
+  }
+
+  const fuzzyCandidates = Array.from(
+    scoped.querySelectorAll('a, button, input[type="submit"], input[type="button"]')
+  );
+
+  for (const el of fuzzyCandidates) {
+    const text = normalizeText(getElementText(el));
+    if (
+      text.includes("next problem") ||
+      text === "next" ||
+      text.includes("next pg")
+    ) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+function clickNextQuestionIfAvailable() {
+  const nextControl = findNextQuestionControl();
+  if (!nextControl) return false;
+  nextControl.click();
+  return true;
+}
+
+function scheduleNextQuestionAdvance() {
+  if (isAtEndOfProblemList()) {
+    setFullAutoState(FULL_AUTO_STATE_IDLE);
+    alertLastQuestionReached();
+    return;
+  }
+
+  let attempts = 0;
+  const maxAttempts = 12;
+
+  const tryAdvance = () => {
+    if (clickNextQuestionIfAvailable()) {
+      setFullAutoState(FULL_AUTO_STATE_IDLE);
+      return;
+    }
+
+    attempts += 1;
+    if (attempts < maxAttempts) {
+      setTimeout(tryAdvance, 700);
+    } else {
+      setFullAutoState(FULL_AUTO_STATE_IDLE);
+      alertLastQuestionReached();
+    }
+  };
+
+  setTimeout(tryAdvance, 1200);
+}
+
+async function initFullAutoMode() {
+  const settings = await getAutomationSettings();
+  if (!settings.fullAuto) return;
+
+  const state = getFullAutoState();
+
+  if (state === FULL_AUTO_STATE_AWAITING_NEXT) {
+    if (clickNextQuestionIfAvailable()) {
+      setFullAutoState(FULL_AUTO_STATE_IDLE);
+      return;
+    }
+    setTimeout(() => {
+      if (clickNextQuestionIfAvailable()) {
+        setFullAutoState(FULL_AUTO_STATE_IDLE);
+      } else {
+        startQuestionFlow({ isAuto: true });
+      }
+    }, 800);
+    return;
+  }
+
+  if (state === FULL_AUTO_STATE_IDLE) {
+    setFullAutoState(FULL_AUTO_STATE_RUNNING);
+  }
+  startQuestionFlow({ isAuto: true });
 }
 
 function fillAnswer(answer) {
@@ -440,7 +796,7 @@ function fillFillInBlank(container, answer) {
 
 function clickSubmitIfAvailable() {
   const form = document.querySelector("#problemMainForm");
-  if (!form) return;
+  if (!form) return false;
 
   const submitBtn =
     form.querySelector("#submitAnswers_id") ||
@@ -450,26 +806,33 @@ function clickSubmitIfAvailable() {
 
   if (submitBtn) {
     submitBtn.click();
+    return true;
   }
+
+  return false;
 }
 
 function maybeAutoSubmit() {
   return new Promise((resolve) => {
-    if (!chrome?.storage?.sync) {
-      resolve();
-      return;
-    }
+    getAutomationSettings().then((settings) => {
+      const shouldSubmit = settings.autoSubmit;
+      let submitted = false;
 
-    chrome.storage.sync.get({ autoSubmit: false }, (settings) => {
-      if (chrome.runtime.lastError) {
-        resolve();
-        return;
+      if (shouldSubmit) {
+        if (settings.fullAuto) {
+          setFullAutoState(FULL_AUTO_STATE_AWAITING_NEXT);
+        }
+        submitted = clickSubmitIfAvailable();
+        if (settings.fullAuto && !submitted) {
+          setFullAutoState(FULL_AUTO_STATE_IDLE);
+        }
       }
 
-      if (settings.autoSubmit) {
-        clickSubmitIfAvailable();
-      }
-      resolve();
+      resolve({
+        autoSubmit: settings.autoSubmit,
+        fullAuto: settings.fullAuto,
+        submitted,
+      });
     });
   });
 }

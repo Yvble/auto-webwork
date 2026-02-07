@@ -39,7 +39,7 @@ function resetObservation() {
 }
 
 async function insertQuestion(questionData) {
-  const { type, question, options, imageData, imageAlt, hasImage } = questionData;
+  const { type, question, options, hasImage } = questionData;
   let text = `Type: ${type}\nQuestion: ${question}`;
 
   if (type === "matching") {
@@ -63,14 +63,11 @@ async function insertQuestion(questionData) {
 
   text +=
     '\n\nPlease provide your answer in JSON format with keys "answer" and "explanation". Explanations should be no more than one sentence.';
+  text +=
+    "\nReturn ONLY the JSON object code block. No extra text.";
 
   text +=
     "\n\nIMPORTANT: Format the answer exactly as a WeBWorK input. Use: pi, INF, e or exp(1), sqrt(x), ln(x), abs(x); trig functions sin, cos, tan, csc, sec, cot, arcsin, arccos, arctan (radians). Use parentheses/brackets for intervals like (1,3], unions like (-INF,3)U[5,INF), sets like {3} or {}. Vectors use <1,2,3> and matrices use [[1,2],[3,4]]. Use * for multiplication when needed.";
-
-  if (imageData) {
-    text += `\n\nImage info. Alt: ${imageAlt || "none"}`;
-    text += `\n${imageData}`;
-  }
 
   return new Promise((resolve, reject) => {
     const inputArea = document.getElementById("prompt-textarea");
