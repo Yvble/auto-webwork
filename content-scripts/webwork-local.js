@@ -280,10 +280,7 @@ function extractProblemText(container) {
     container.querySelector(".problem-content") ||
     container;
 
-  const mathTex = Array.from(
-    body.querySelectorAll('script[type^="math/tex"]')
-  )
-    .map((s) => s.textContent.trim())
+  const mathTex = getProblemMathText(body)
     .filter(Boolean);
 
   const clone = body.cloneNode(true);
@@ -309,11 +306,73 @@ function extractProblemText(container) {
   ];
   clone.querySelectorAll(removeSelectors.join(",")).forEach((el) => el.remove());
 
-  let text = clone.textContent.replace(/\s+/g, " ").trim();
+  let text = normalizeExtractedText(clone.textContent);
   if (mathTex.length) {
-    text += `\nMath: ${mathTex.join(" ; ")}`;
+    text += `\nMath expressions, in order: ${mathTex.join(" ; ")}`;
   }
   return text;
+}
+
+function normalizeExtractedText(text) {
+  return String(text || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getProblemMathText(body) {
+  const texScripts = Array.from(body.querySelectorAll('script[type^="math/tex"]'))
+    .map((s) => s.textContent.trim());
+
+  const mathMl = Array.from(body.querySelectorAll("mjx-assistive-mml math, math"))
+    .map(mathNodeToText);
+
+  return [...texScripts, ...mathMl]
+    .map(normalizeExtractedText)
+    .filter(Boolean);
+}
+
+function mathNodeToText(node) {
+  if (!node) return "";
+
+  const tag = node.localName;
+  const children = Array.from(node.children);
+  if (!children.length) {
+    return normalizeMathToken(node.textContent);
+  }
+
+  if (tag === "mfrac" && children.length >= 2) {
+    return `(${mathNodeToText(children[0])})/(${mathNodeToText(children[1])})`;
+  }
+
+  if (tag === "msup" && children.length >= 2) {
+    return `${mathNodeToText(children[0])}^(${mathNodeToText(children[1])})`;
+  }
+
+  if (tag === "msub" && children.length >= 2) {
+    return `${mathNodeToText(children[0])}_${mathNodeToText(children[1])}`;
+  }
+
+  if (tag === "msqrt") {
+    return `sqrt(${children.map(mathNodeToText).join("")})`;
+  }
+
+  if (tag === "mroot" && children.length >= 2) {
+    return `root(${mathNodeToText(children[1])}, ${mathNodeToText(children[0])})`;
+  }
+
+  return children.map(mathNodeToText).join("");
+}
+
+function normalizeMathToken(text) {
+  return String(text || "")
+    .replace(/\u2061/g, "")
+    .replace(/\u03c0/g, "pi")
+    .replace(/\u2212/g, "-")
+    .replace(/\u00d7/g, "*")
+    .replace(/\u00f7/g, "/")
+    .replace(/\s+/g, "")
+    .trim();
 }
 
 function extractOptions(container) {
@@ -503,6 +562,19 @@ function bindManualProblemSelectionGuard() {
 }
 
 function findNextProblemFromProblemList() {
+  const activeProblem = document.querySelector(
+    ".problem-list li.currentProblem, .problem-list li.active, .problem-list a.active"
+  );
+  const activeLi = activeProblem ? activeProblem.closest("li") : null;
+  if (activeLi) {
+    let nextLi = activeLi.nextElementSibling;
+    while (nextLi) {
+      const link = nextLi.querySelector("a[href]");
+      if (link) return link;
+      nextLi = nextLi.nextElementSibling;
+    }
+  }
+
   const directNext =
     document.querySelector(".problem-list li.currentProblem + li a[href]") ||
     document.querySelector(".problem-list li.active + li a[href]");
@@ -525,7 +597,9 @@ function findNextProblemFromProblemList() {
 
 function isAtEndOfProblemList() {
   const hasCurrent = Boolean(
-    document.querySelector(".problem-list li.currentProblem, .problem-list li.active")
+    document.querySelector(
+      ".problem-list li.currentProblem, .problem-list li.active, .problem-list a.active"
+    )
   );
   if (!hasCurrent) return false;
   return !findNextProblemFromProblemList();
@@ -644,7 +718,7 @@ function fillAnswer(answer) {
   if (container.querySelector("select")) {
     return fillMatching(container, answer);
   }
-  if (container.querySelector("input[type=text], input[type=number], textarea")) {
+  if (getAnswerTextInputs(container).length) {
     return fillFillInBlank(container, answer);
   }
   return false;
@@ -674,10 +748,30 @@ function getInputLabelText(input) {
 function setInputValue(input, value) {
   if (!input) return;
   if ("value" in input) {
-    input.value = value;
+    input.value = String(value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
+}
+
+function getAnswerTextInputs(container) {
+  const selectors = [
+    'input[type="text"][name^="AnSwEr"]',
+    'input[type="number"][name^="AnSwEr"]',
+    'textarea[name^="AnSwEr"]',
+  ];
+  const answerInputs = Array.from(container.querySelectorAll(selectors.join(",")))
+    .filter((input) => !input.name.startsWith("previous_"));
+
+  if (answerInputs.length) return answerInputs;
+
+  return Array.from(
+    container.querySelectorAll('input[type="text"], input[type="number"], textarea')
+  ).filter((input) => {
+    if (input.closest(".mq-editable-field")) return false;
+    if (input.name && input.name.startsWith("previous_")) return false;
+    return true;
+  });
 }
 
 function fillMultipleChoice(container, answer) {
@@ -772,9 +866,7 @@ function fillMatching(container, answer) {
 }
 
 function fillFillInBlank(container, answer) {
-  const inputs = Array.from(
-    container.querySelectorAll("input[type=text], input[type=number], textarea")
-  );
+  const inputs = getAnswerTextInputs(container);
   if (!inputs.length) return false;
 
   let answers = [];
@@ -789,9 +881,17 @@ function fillFillInBlank(container, answer) {
   inputs.forEach((input, i) => {
     const value = answers[i] !== undefined ? answers[i] : "";
     setInputValue(input, value);
+    syncMathQuillHiddenInput(input, value);
   });
 
   return true;
+}
+
+function syncMathQuillHiddenInput(input, value) {
+  if (!input.id) return;
+  const hidden = document.getElementById(`MaThQuIlL_${input.id}`);
+  if (!hidden) return;
+  setInputValue(hidden, value);
 }
 
 function clickSubmitIfAvailable() {
