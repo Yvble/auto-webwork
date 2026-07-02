@@ -39,7 +39,7 @@ function resetObservation() {
 }
 
 async function insertQuestion(questionData) {
-  const { type, question, options, hasImage } = questionData;
+  const { type, question, options, hasImage, answerFields } = questionData;
   let text = `Type: ${type}\nQuestion: ${question}`;
 
   if (type === "matching") {
@@ -54,6 +54,15 @@ async function insertQuestion(questionData) {
   } else if (type === "fill_in_the_blank") {
     text +=
       "\n\nThis is a fill in the blank question. If there are multiple blanks, provide answers as an array in order of appearance. For a single blank, you can provide a string.";
+    if (answerFields && answerFields.length > 0) {
+      text +=
+        "\nAnswer fields:\n" +
+        answerFields
+          .map((field) => `${field.index}. ${field.name || field.id || field.label}`)
+          .join("\n");
+      text +=
+        '\nYou may also return "answer" as an object keyed by these field names.';
+    }
   } else if (options && options.length > 0) {
     text +=
       "\nOptions:\n" + options.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
@@ -184,7 +193,7 @@ function startObserving() {
 
     try {
       const parsed = JSON.parse(responseText);
-      if (parsed.answer && !hasResponded) {
+      if (Object.prototype.hasOwnProperty.call(parsed, "answer") && !hasResponded) {
         hasResponded = true;
         chrome.runtime
           .sendMessage({

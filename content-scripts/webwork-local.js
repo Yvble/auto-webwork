@@ -240,6 +240,7 @@ async function parseQuestion() {
     type: detectQuestionType(container, options),
     question: questionText,
     options,
+    answerFields: getAnswerFields(container),
     imageData: imageData ? imageData.dataUrl : null,
     imageAlt: imageData ? imageData.alt : null,
     imageSrc: imageData ? imageData.src : null,
@@ -774,6 +775,15 @@ function getAnswerTextInputs(container) {
   });
 }
 
+function getAnswerFields(container) {
+  return getAnswerTextInputs(container).map((input, index) => ({
+    index: index + 1,
+    id: input.id || "",
+    name: input.name || "",
+    label: input.getAttribute("aria-label") || "",
+  }));
+}
+
 function fillMultipleChoice(container, answer) {
   const radios = Array.from(container.querySelectorAll("input[type=radio]"));
   const normalizedAnswer = normalizeText(answer);
@@ -869,22 +879,79 @@ function fillFillInBlank(container, answer) {
   const inputs = getAnswerTextInputs(container);
   if (!inputs.length) return false;
 
-  let answers = [];
-  if (Array.isArray(answer)) {
-    answers = answer;
-  } else if (answer !== null && answer !== undefined) {
-    answers = [answer];
-  } else {
-    return false;
-  }
+  const answers = normalizeFillInAnswers(answer, inputs);
+  if (!answers.length) return false;
 
   inputs.forEach((input, i) => {
     const value = answers[i] !== undefined ? answers[i] : "";
-    setInputValue(input, value);
-    syncMathQuillHiddenInput(input, value);
+    setAnswerInputValue(input, value);
   });
 
   return true;
+}
+
+function normalizeFillInAnswers(answer, inputs) {
+  if (Array.isArray(answer)) return answer;
+  if (answer === null || answer === undefined) return [];
+
+  if (typeof answer === "object") {
+    const byField = inputs
+      .map((input) => {
+        const keys = [
+          input.name,
+          input.id,
+          input.getAttribute("aria-label"),
+          input.name ? input.name.toLowerCase() : "",
+          input.id ? input.id.toLowerCase() : "",
+        ].filter(Boolean);
+
+        for (const key of keys) {
+          if (Object.prototype.hasOwnProperty.call(answer, key)) {
+            return answer[key];
+          }
+        }
+        return undefined;
+      })
+      .filter((value) => value !== undefined);
+
+    if (byField.length) return byField;
+    return Object.keys(answer)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((key) => answer[key]);
+  }
+
+  return [answer];
+}
+
+function setAnswerInputValue(input, value) {
+  setInputValue(input, value);
+  setMathQuillValue(input, value);
+  syncMathQuillHiddenInput(input, value);
+}
+
+function setMathQuillValue(input, value) {
+  if (!input.id) return false;
+
+  const mathFieldEl = document.getElementById(`mq-answer-${input.id}`);
+  if (!mathFieldEl) return false;
+
+  const stringValue = String(value);
+
+  try {
+    if (window.MathQuill && typeof window.MathQuill.getInterface === "function") {
+      const MQ = window.MathQuill.getInterface(2);
+      const mathField = MQ.MathField(mathFieldEl);
+      mathField.latex(stringValue);
+      mathField.blur();
+      return true;
+    }
+  } catch (e) {}
+
+  const textarea = mathFieldEl.querySelector("textarea");
+  if (textarea) {
+    setInputValue(textarea, stringValue);
+  }
+  return false;
 }
 
 function syncMathQuillHiddenInput(input, value) {
