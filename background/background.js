@@ -62,12 +62,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.tab && sender.tab.id) {
       localTabId = sender.tab.id;
     }
+    const originTabId = localTabId;
 
-    const sendToTarget = (tabId) => {
-      chrome.tabs.sendMessage(tabId, {
-        type: "receiveQuestion",
-        question: message.question,
-      });
+    // The AI tab needs real focus for the paste-and-send step (Claude's
+    // editor in particular won't register input via the Selection API
+    // on an unfocused tab), so activate it just long enough for that,
+    // then hand focus straight back to the WebWork tab.
+    const sendToTarget = async (tabId) => {
+      try {
+        await chrome.tabs.update(tabId, { active: true });
+      } catch (e) {}
+
+      let restored = false;
+      const restoreFocus = () => {
+        if (restored) return;
+        restored = true;
+        if (originTabId) {
+          chrome.tabs.update(originTabId, { active: true }).catch(() => {});
+        }
+      };
+
+      chrome.tabs.sendMessage(
+        tabId,
+        { type: "receiveQuestion", question: message.question },
+        () => restoreFocus()
+      );
+      setTimeout(restoreFocus, 15000);
     };
 
     if (aiTabIds[target]) {

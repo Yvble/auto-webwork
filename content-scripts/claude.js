@@ -90,6 +90,46 @@ function insertTextIntoInput(inputArea, text) {
   }
 }
 
+function isSendButtonReady(button) {
+  if (!button) return false;
+  if (button.disabled) return false;
+  if (button.getAttribute("aria-disabled") === "true") return false;
+  return true;
+}
+
+function waitForSendButtonReady(inputArea, hasImage, resolve, reject, attempt) {
+  const sendButton = getSendButton();
+
+  if (isSendButtonReady(sendButton)) {
+    if (hasImage) {
+      alert(
+        "Claude: Image detected. Drag the image from the opened tab, then press Enter or click Send."
+      );
+      armManualSendObserver(inputArea, sendButton);
+      resolve();
+    } else {
+      sendButton.click();
+      startObserving();
+      resolve();
+    }
+    return;
+  }
+
+  if (attempt >= 10) {
+    reject(
+      new Error(
+        sendButton ? "Send button stayed disabled" : "Send button not found"
+      )
+    );
+    return;
+  }
+
+  setTimeout(
+    () => waitForSendButtonReady(inputArea, hasImage, resolve, reject, attempt + 1),
+    300
+  );
+}
+
 async function insertQuestion(questionData) {
   const { hasImage } = questionData;
   const text = window.AutoWebWork.buildPromptText(questionData);
@@ -103,26 +143,7 @@ async function insertQuestion(questionData) {
 
     setTimeout(() => {
       insertTextIntoInput(inputArea, text);
-
-      setTimeout(() => {
-        const sendButton = getSendButton();
-        if (!sendButton) {
-          reject(new Error("Send button not found"));
-          return;
-        }
-
-        if (hasImage) {
-          alert(
-            "Claude: Image detected. Drag the image from the opened tab, then press Enter or click Send."
-          );
-          armManualSendObserver(inputArea, sendButton);
-          resolve();
-        } else {
-          sendButton.click();
-          startObserving();
-          resolve();
-        }
-      }, 300);
+      setTimeout(() => waitForSendButtonReady(inputArea, hasImage, resolve, reject, 0), 300);
     }, 300);
   });
 }
