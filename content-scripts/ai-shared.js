@@ -4,15 +4,14 @@ window.AutoWebWork.buildPromptText = function buildPromptText(questionData) {
   const { type, question, options } = questionData;
   let text = `Type: ${type}\nQuestion: ${question}`;
 
-  if (type === "matching") {
+  if (type === "dropdown") {
     text +=
-      "\nPrompts:\n" +
-      options.prompts.map((prompt, i) => `${i + 1}. ${prompt}`).join("\n");
+      "\nDropdowns (choose exactly one option for each, in order):\n" +
+      options.fields
+        .map((field, i) => `${i + 1}. Options: ${field.choices.join(", ")}`)
+        .join("\n");
     text +=
-      "\nChoices:\n" +
-      options.choices.map((choice, i) => `${i + 1}. ${choice}`).join("\n");
-    text +=
-      "\n\nPlease match each prompt with the correct choice. Format your answer as an array where each element is 'Prompt -> Choice'.";
+      "\n\nFormat your answer as an array with one chosen option per dropdown, in the same order as listed above. Use the exact option text, no numbers.";
   } else if (type === "fill_in_the_blank") {
     text +=
       "\n\nThis is a fill in the blank question. If there are multiple blanks, provide answers as an array in order of appearance. For a single blank, you can provide a string.";

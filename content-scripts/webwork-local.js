@@ -288,8 +288,8 @@ function findProblemContainer() {
 function detectQuestionType(container, options) {
   if (container.querySelector("input[type=radio]")) return "multiple_choice";
   if (container.querySelector("input[type=checkbox]")) return "multiple_select";
-  if (options && options.prompts) return "matching";
-  if (container.querySelector("select")) return "matching";
+  if (options && options.fields) return "dropdown";
+  if (container.querySelector("select")) return "dropdown";
   if (container.querySelector("input[type=text], input[type=number], textarea")) {
     return "fill_in_the_blank";
   }
@@ -372,11 +372,13 @@ function extractOptions(container) {
 
   const selectEls = Array.from(container.querySelectorAll("select"));
   if (selectEls.length) {
-    const prompts = selectEls.map((sel, i) => `Field ${i + 1}`);
-    const choices = Array.from(selectEls[0].options)
-      .map((opt) => opt.textContent.trim())
-      .filter(Boolean);
-    return { prompts, choices };
+    const fields = selectEls.map((sel, i) => ({
+      label: `Dropdown ${i + 1}`,
+      choices: Array.from(sel.options)
+        .map((opt) => opt.textContent.trim())
+        .filter(Boolean),
+    }));
+    return { fields };
   }
 
   return [];
@@ -685,7 +687,7 @@ function fillAnswer(answer) {
     return fillMultipleSelect(container, answer);
   }
   if (container.querySelector("select")) {
-    return fillMatching(container, answer);
+    return fillDropdowns(container, answer);
   }
   if (getAnswerTextInputs(container).length) {
     return fillFillInBlank(container, answer);
@@ -811,7 +813,7 @@ function fillMultipleSelect(container, answer) {
   return anyChecked;
 }
 
-function fillMatching(container, answer) {
+function fillDropdowns(container, answer) {
   const selects = Array.from(container.querySelectorAll("select"));
   if (!selects.length) return false;
 
