@@ -43,14 +43,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.query({ url: matchPattern }, (tabs) => {
       if (tabs && tabs.length > 0) {
         aiTabIds[target] = tabs[0].id;
-        if (aiTabIds[target]) {
-          chrome.tabs.update(aiTabIds[target], { active: true }).catch(() => {});
-        }
         sendResponse({ received: true, tabId: aiTabIds[target] });
         return;
       }
 
-      chrome.tabs.create({ url, active: true }, (tab) => {
+      chrome.tabs.create({ url, active: false }, (tab) => {
         if (tab && tab.id) {
           aiTabIds[target] = tab.id;
         }
@@ -97,7 +94,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     chrome.tabs.sendMessage(localTabId, message, () => {
-      chrome.tabs.update(localTabId, { active: true }).catch(() => {});
       sendResponse({ received: true });
     });
     return true;
