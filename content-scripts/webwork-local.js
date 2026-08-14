@@ -240,7 +240,6 @@ async function parseQuestion() {
     type: detectQuestionType(container, options),
     question: questionText,
     options,
-    answerFields: getAnswerFields(container),
     imageData: imageData ? imageData.dataUrl : null,
     imageAlt: imageData ? imageData.alt : null,
     imageSrc: imageData ? imageData.src : null,
@@ -281,10 +280,8 @@ function extractProblemText(container) {
     container.querySelector(".problem-content") ||
     container;
 
-  const mathTex = getProblemMathText(body)
-    .filter(Boolean);
-
   const clone = body.cloneNode(true);
+  replaceMathWithText(clone);
   const removeSelectors = [
     "input",
     "textarea",
@@ -307,72 +304,34 @@ function extractProblemText(container) {
   ];
   clone.querySelectorAll(removeSelectors.join(",")).forEach((el) => el.remove());
 
-  let text = normalizeExtractedText(clone.textContent);
-  if (mathTex.length) {
-    text += `\nMath expressions, in order: ${mathTex.join(" ; ")}`;
-  }
+  let text = clone.textContent.replace(/\s+/g, " ").trim();
   return text;
 }
 
-function normalizeExtractedText(text) {
+function replaceMathWithText(root) {
+  const mathContainers = Array.from(root.querySelectorAll("mjx-container"));
+  for (const container of mathContainers) {
+    const text = getMathText(container);
+    if (!text) continue;
+    container.replaceWith(document.createTextNode(` ${text} `));
+  }
+}
+
+function getMathText(container) {
+  const math = container.querySelector("mjx-assistive-mml math");
+  if (!math) return "";
+  return normalizeMathText(math.textContent || "");
+}
+
+function normalizeMathText(text) {
   return String(text || "")
     .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getProblemMathText(body) {
-  const texScripts = Array.from(body.querySelectorAll('script[type^="math/tex"]'))
-    .map((s) => s.textContent.trim());
-
-  const mathMl = Array.from(body.querySelectorAll("mjx-assistive-mml math, math"))
-    .map(mathNodeToText);
-
-  return [...texScripts, ...mathMl]
-    .map(normalizeExtractedText)
-    .filter(Boolean);
-}
-
-function mathNodeToText(node) {
-  if (!node) return "";
-
-  const tag = node.localName;
-  const children = Array.from(node.children);
-  if (!children.length) {
-    return normalizeMathToken(node.textContent);
-  }
-
-  if (tag === "mfrac" && children.length >= 2) {
-    return `(${mathNodeToText(children[0])})/(${mathNodeToText(children[1])})`;
-  }
-
-  if (tag === "msup" && children.length >= 2) {
-    return `${mathNodeToText(children[0])}^(${mathNodeToText(children[1])})`;
-  }
-
-  if (tag === "msub" && children.length >= 2) {
-    return `${mathNodeToText(children[0])}_${mathNodeToText(children[1])}`;
-  }
-
-  if (tag === "msqrt") {
-    return `sqrt(${children.map(mathNodeToText).join("")})`;
-  }
-
-  if (tag === "mroot" && children.length >= 2) {
-    return `root(${mathNodeToText(children[1])}, ${mathNodeToText(children[0])})`;
-  }
-
-  return children.map(mathNodeToText).join("");
-}
-
-function normalizeMathToken(text) {
-  return String(text || "")
-    .replace(/\u2061/g, "")
-    .replace(/\u03c0/g, "pi")
     .replace(/\u2212/g, "-")
-    .replace(/\u00d7/g, "*")
-    .replace(/\u00f7/g, "/")
-    .replace(/\s+/g, "")
+    .replace(/\u221e/g, "INF")
+    .replace(/\u03c0/g, "pi")
+    .replace(/\u222a/g, " U ")
+    .replace(/\u2061/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -563,19 +522,6 @@ function bindManualProblemSelectionGuard() {
 }
 
 function findNextProblemFromProblemList() {
-  const activeProblem = document.querySelector(
-    ".problem-list li.currentProblem, .problem-list li.active, .problem-list a.active"
-  );
-  const activeLi = activeProblem ? activeProblem.closest("li") : null;
-  if (activeLi) {
-    let nextLi = activeLi.nextElementSibling;
-    while (nextLi) {
-      const link = nextLi.querySelector("a[href]");
-      if (link) return link;
-      nextLi = nextLi.nextElementSibling;
-    }
-  }
-
   const directNext =
     document.querySelector(".problem-list li.currentProblem + li a[href]") ||
     document.querySelector(".problem-list li.active + li a[href]");
@@ -598,9 +544,7 @@ function findNextProblemFromProblemList() {
 
 function isAtEndOfProblemList() {
   const hasCurrent = Boolean(
-    document.querySelector(
-      ".problem-list li.currentProblem, .problem-list li.active, .problem-list a.active"
-    )
+    document.querySelector(".problem-list li.currentProblem, .problem-list li.active")
   );
   if (!hasCurrent) return false;
   return !findNextProblemFromProblemList();
@@ -749,9 +693,23 @@ function getInputLabelText(input) {
 function setInputValue(input, value) {
   if (!input) return;
   if ("value" in input) {
-    input.value = String(value);
+    const stringValue = String(value);
+    const prototype =
+      input.tagName === "TEXTAREA"
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+
+    if (setter) {
+      setter.call(input, stringValue);
+    } else {
+      input.value = stringValue;
+    }
+
+    input.setAttribute("value", stringValue);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
   }
 }
 
@@ -773,15 +731,6 @@ function getAnswerTextInputs(container) {
     if (input.name && input.name.startsWith("previous_")) return false;
     return true;
   });
-}
-
-function getAnswerFields(container) {
-  return getAnswerTextInputs(container).map((input, index) => ({
-    index: index + 1,
-    id: input.id || "",
-    name: input.name || "",
-    label: input.getAttribute("aria-label") || "",
-  }));
 }
 
 function fillMultipleChoice(container, answer) {
@@ -950,6 +899,12 @@ function setMathQuillValue(input, value) {
   const textarea = mathFieldEl.querySelector("textarea");
   if (textarea) {
     setInputValue(textarea, stringValue);
+  }
+
+  const rootBlock = mathFieldEl.querySelector(".mq-root-block");
+  if (rootBlock) {
+    rootBlock.classList.remove("mq-empty");
+    rootBlock.textContent = stringValue;
   }
   return false;
 }
