@@ -3,6 +3,7 @@ let jsonBlockCountAtQuestion = 0;
 let observationStartTime = 0;
 let observationTimeout = null;
 let observer = null;
+let manualSendCleanup = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "receiveQuestion") {
@@ -32,6 +33,10 @@ function resetObservation() {
   if (observer) {
     observer.disconnect();
     observer = null;
+  }
+  if (manualSendCleanup) {
+    manualSendCleanup();
+    manualSendCleanup = null;
   }
 }
 
@@ -123,20 +128,31 @@ async function insertQuestion(questionData) {
 }
 
 function armManualSendObserver(inputArea, sendButton) {
-  const startOnce = (() => {
-    let started = false;
-    return () => {
-      if (started) return;
-      started = true;
-      chrome.runtime.sendMessage({ type: "closeImageTab" });
-      startObserving();
-      inputArea.removeEventListener("keydown", onKeydown, true);
-      if (sendButton) {
-        sendButton.removeEventListener("click", onClick, true);
-      }
-      document.removeEventListener("click", onDocClick, true);
-    };
-  })();
+  if (manualSendCleanup) {
+    manualSendCleanup();
+    manualSendCleanup = null;
+  }
+
+  let started = false;
+
+  const cleanup = () => {
+    inputArea.removeEventListener("keydown", onKeydown, true);
+    if (sendButton) {
+      sendButton.removeEventListener("click", onClick, true);
+    }
+    document.removeEventListener("click", onDocClick, true);
+    if (manualSendCleanup === cleanup) {
+      manualSendCleanup = null;
+    }
+  };
+
+  const startOnce = () => {
+    if (started) return;
+    started = true;
+    cleanup();
+    chrome.runtime.sendMessage({ type: "closeImageTab" });
+    startObserving();
+  };
 
   const onKeydown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -147,7 +163,7 @@ function armManualSendObserver(inputArea, sendButton) {
   const onDocClick = (e) => {
     const target = e.target;
     if (!target) return;
-    const btn = target.closest('button[aria-label*="Send" i]');
+    const btn = target.closest('button[aria-label="Send message"]');
     if (btn) startOnce();
   };
 
@@ -156,6 +172,8 @@ function armManualSendObserver(inputArea, sendButton) {
     sendButton.addEventListener("click", onClick, true);
   }
   document.addEventListener("click", onDocClick, true);
+
+  manualSendCleanup = cleanup;
 }
 
 function getJsonCodeBlocks() {
