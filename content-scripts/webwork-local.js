@@ -359,15 +359,23 @@ function normalizeMathText(text) {
     .trim();
 }
 
+function getCleanLabelText(labelEl) {
+  if (!labelEl) return "";
+  const clone = labelEl.cloneNode(true);
+  replaceMathWithText(clone);
+  clone.querySelectorAll("input, script, style").forEach((el) => el.remove());
+  let text = clone.textContent.replace(/\s+/g, " ").trim();
+  text = text.replace(/^\(?[A-Za-z0-9]{1,2}[.)]\s+/, "");
+  return text;
+}
+
 function extractOptions(container) {
   const radios = Array.from(container.querySelectorAll("input[type=radio]"));
   const checkboxes = Array.from(container.querySelectorAll("input[type=checkbox]"));
 
   if (radios.length || checkboxes.length) {
     const labels = Array.from(container.querySelectorAll("label"));
-    return labels
-      .map((label) => label.textContent.trim())
-      .filter(Boolean);
+    return labels.map((label) => getCleanLabelText(label)).filter(Boolean);
   }
 
   const selectEls = Array.from(container.querySelectorAll("select"));
@@ -707,12 +715,12 @@ function getInputLabelText(input) {
   const id = input.getAttribute("id");
   if (id) {
     const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-    if (label) return label.textContent.trim();
+    if (label) return getCleanLabelText(label);
   }
   const parentLabel = input.closest("label");
-  if (parentLabel) return parentLabel.textContent.trim();
+  if (parentLabel) return getCleanLabelText(parentLabel);
   const sibling = input.parentElement;
-  if (sibling) return sibling.textContent.trim();
+  if (sibling) return getCleanLabelText(sibling);
   return "";
 }
 

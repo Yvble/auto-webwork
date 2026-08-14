@@ -19,7 +19,7 @@ window.AutoWebWork.buildPromptText = function buildPromptText(questionData) {
     text +=
       "\nOptions:\n" + options.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
     text +=
-      "\n\nIMPORTANT: Your answer must EXACTLY match one of the above options. Do not include numbers in your answer. If there are periods, include them.";
+      "\n\nIMPORTANT: Your answer must EXACTLY match the text of one (or more, if multiple apply) of the above options. Do not include the leading list number or any letter prefix — just the option text itself.";
   }
 
   text +=
