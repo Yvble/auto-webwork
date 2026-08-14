@@ -298,6 +298,7 @@ function detectQuestionType(container, options) {
 
 function extractProblemText(container) {
   const body =
+    container.querySelector(".PGML") ||
     container.querySelector("#output_problem_body") ||
     container.querySelector(".problem-content") ||
     container;
@@ -317,6 +318,7 @@ function extractProblemText(container) {
     ".submitAnswers",
     ".solutionLink",
     ".problem-controls",
+    'a[href*="help.html"]',
     ".MathJax",
     ".MathJax_Preview",
     ".MJX_Assistive_MathML",
