@@ -17,8 +17,21 @@
       </header>
 
       <div class="settings-section">
+        <h2>AI Provider</h2>
+        <p>Choose which assistant receives the question.</p>
+
+        <label class="field">
+          <span>Send to</span>
+          <select id="aiTarget">
+            <option value="chatgpt">ChatGPT</option>
+            <option value="claude">Claude</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="settings-section">
         <h2>Behavior</h2>
-        <p>Control how answers are filled after ChatGPT responds.</p>
+        <p>Control how answers are filled after the AI responds.</p>
 
         <label class="toggle">
           <input type="checkbox" id="fullAuto" />
@@ -35,11 +48,11 @@
       <div class="settings-section">
         <h2>Info</h2>
         <p>
-          This extension extracts WebWork problems, sends them to ChatGPT, and
-          fills your answers in WeBWorK format.
+          This extension extracts WebWork problems, sends them to your chosen
+          AI provider, and fills your answers in WeBWorK format.
         </p>
         <ul class="tips">
-          <li>Open a WebWork problem before clicking "Send to ChatGPT".</li>
+          <li>Open a WebWork problem before clicking "Send to ChatGPT/Claude".</li>
           <li>Always review answers before submitting.</li>
         </ul>
       </div>

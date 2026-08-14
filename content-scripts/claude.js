@@ -8,10 +8,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "receiveQuestion") {
     resetObservation();
 
-    const messages = document.querySelectorAll(
-      '[data-message-author-role="assistant"]'
-    );
-    messageCountAtQuestion = messages.length;
+    messageCountAtQuestion = getAssistantMessages().length;
     hasResponded = false;
 
     insertQuestion(message.question)
@@ -38,42 +35,90 @@ function resetObservation() {
   }
 }
 
+function getInputArea() {
+  return (
+    document.querySelector('div[contenteditable="true"].ProseMirror') ||
+    document.querySelector('div[aria-label="Write your prompt to Claude"]') ||
+    document.querySelector('fieldset div[contenteditable="true"]') ||
+    document.querySelector('div[contenteditable="true"]')
+  );
+}
+
+function getSendButton() {
+  return (
+    document.querySelector('button[aria-label="Send message"]') ||
+    document.querySelector('button[aria-label="Send Message"]') ||
+    Array.from(document.querySelectorAll("button")).find((btn) =>
+      /send message/i.test(btn.getAttribute("aria-label") || "")
+    ) ||
+    null
+  );
+}
+
+function insertTextIntoInput(inputArea, text) {
+  inputArea.focus();
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(inputArea);
+  selection.removeAllRanges();
+  selection.addRange(range);
+
+  let inserted = false;
+  try {
+    inserted = document.execCommand("insertText", false, text);
+  } catch (e) {
+    inserted = false;
+  }
+
+  if (!inserted || !inputArea.textContent.trim()) {
+    const escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    inputArea.innerHTML = escaped
+      .split("\n")
+      .map((line) => `<p>${line || "<br>"}</p>`)
+      .join("");
+    inputArea.dispatchEvent(
+      new InputEvent("input", { bubbles: true, cancelable: true })
+    );
+  }
+}
+
 async function insertQuestion(questionData) {
   const { hasImage } = questionData;
   const text = window.AutoWebWork.buildPromptText(questionData);
 
   return new Promise((resolve, reject) => {
-    const inputArea = document.getElementById("prompt-textarea");
-    if (inputArea) {
-      setTimeout(() => {
-        inputArea.focus();
-        inputArea.innerHTML = `<p>${text}</p>`;
-        inputArea.dispatchEvent(new Event("input", { bubbles: true }));
-
-        setTimeout(() => {
-          const sendButton = document.querySelector(
-            '[data-testid="send-button"]'
-          );
-          if (sendButton) {
-            if (hasImage) {
-              alert(
-                "ChatGPT: Image detected. Drag the image from the opened tab, then press Enter or click Send."
-              );
-              armManualSendObserver(inputArea, sendButton);
-              resolve();
-            } else {
-              sendButton.click();
-              startObserving();
-              resolve();
-            }
-          } else {
-            reject(new Error("Send button not found"));
-          }
-        }, 300);
-      }, 300);
-    } else {
+    const inputArea = getInputArea();
+    if (!inputArea) {
       reject(new Error("Input area not found"));
+      return;
     }
+
+    setTimeout(() => {
+      insertTextIntoInput(inputArea, text);
+
+      setTimeout(() => {
+        const sendButton = getSendButton();
+        if (!sendButton) {
+          reject(new Error("Send button not found"));
+          return;
+        }
+
+        if (hasImage) {
+          alert(
+            "Claude: Image detected. Drag the image from the opened tab, then press Enter or click Send."
+          );
+          armManualSendObserver(inputArea, sendButton);
+          resolve();
+        } else {
+          sendButton.click();
+          startObserving();
+          resolve();
+        }
+      }, 300);
+    }, 300);
   });
 }
 
@@ -102,9 +147,7 @@ function armManualSendObserver(inputArea, sendButton) {
   const onDocClick = (e) => {
     const target = e.target;
     if (!target) return;
-    const btn = target.closest(
-      '[data-testid="send-button"], button[type="submit"]'
-    );
+    const btn = target.closest('button[aria-label*="Send" i]');
     if (btn) startOnce();
   };
 
@@ -115,6 +158,19 @@ function armManualSendObserver(inputArea, sendButton) {
   document.addEventListener("click", onDocClick, true);
 }
 
+function getAssistantMessages() {
+  const nodes = document.querySelectorAll(".font-claude-message");
+  if (nodes.length) return Array.from(nodes);
+  return Array.from(document.querySelectorAll('[data-is-streaming] .prose'));
+}
+
+function isResponseGenerating() {
+  return Boolean(
+    document.querySelector('button[aria-label="Stop response"]') ||
+      document.querySelector('[data-is-streaming="true"]')
+  );
+}
+
 function startObserving() {
   observationStartTime = Date.now();
   observationTimeout = setTimeout(() => {
@@ -123,14 +179,11 @@ function startObserving() {
     }
   }, 180000);
 
-  observer = new MutationObserver((mutations) => {
+  observer = new MutationObserver(() => {
     if (hasResponded) return;
 
-    const messages = document.querySelectorAll(
-      '[data-message-author-role="assistant"]'
-    );
+    const messages = getAssistantMessages();
     if (!messages.length) return;
-
     if (messages.length <= messageCountAtQuestion) return;
 
     const latestMessage = messages[messages.length - 1];
@@ -160,8 +213,7 @@ function startObserving() {
       return;
     }
 
-    const isGenerating = latestMessage.querySelector(".result-streaming");
-    if (!isGenerating && Date.now() - observationStartTime > 30000) {
+    if (!isResponseGenerating() && Date.now() - observationStartTime > 30000) {
       const strictMatch = window.AutoWebWork.extractStrictAnswerJson(
         latestMessage.textContent.trim()
       );

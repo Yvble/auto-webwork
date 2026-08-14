@@ -5,6 +5,7 @@ const FULL_AUTO_STATE_IDLE = "idle";
 const FULL_AUTO_STATE_RUNNING = "running";
 const FULL_AUTO_STATE_AWAITING_NEXT = "awaiting_next";
 const FULL_AUTO_BAR_ID = "auto-webwork-full-auto-bar";
+const AI_TARGET_LABELS = { chatgpt: "ChatGPT", claude: "Claude" };
 
 function addHelperButton() {
   const btn = document.createElement("button");
@@ -26,6 +27,24 @@ function addHelperButton() {
   });
 
   document.body.appendChild(btn);
+
+  getAutomationSettings().then((settings) => {
+    updateHelperButtonLabel(settings.aiTarget);
+  });
+
+  if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "sync" || !changes.aiTarget) return;
+      updateHelperButtonLabel(changes.aiTarget.newValue);
+    });
+  }
+}
+
+function updateHelperButtonLabel(aiTarget) {
+  const btn = document.getElementById("auto-webwork-send-btn");
+  if (!btn) return;
+  const label = AI_TARGET_LABELS[aiTarget] || AI_TARGET_LABELS.chatgpt;
+  btn.textContent = `Send to ${label}`;
 }
 
 function ensureFullAutoBar() {
@@ -156,25 +175,24 @@ function getQuestionFingerprint(qData) {
 
 function getAutomationSettings() {
   return new Promise((resolve) => {
+    const defaults = { autoSubmit: false, fullAuto: false, aiTarget: "chatgpt" };
     if (!chrome?.storage?.sync) {
-      resolve({ autoSubmit: false, fullAuto: false });
+      resolve(defaults);
       return;
     }
 
-    chrome.storage.sync.get(
-      { autoSubmit: false, fullAuto: false },
-      (settings) => {
-        if (chrome.runtime.lastError) {
-          resolve({ autoSubmit: false, fullAuto: false });
-          return;
-        }
-
-        resolve({
-          autoSubmit: Boolean(settings.autoSubmit),
-          fullAuto: Boolean(settings.fullAuto),
-        });
+    chrome.storage.sync.get(defaults, (settings) => {
+      if (chrome.runtime.lastError) {
+        resolve(defaults);
+        return;
       }
-    );
+
+      resolve({
+        autoSubmit: Boolean(settings.autoSubmit),
+        fullAuto: Boolean(settings.fullAuto),
+        aiTarget: settings.aiTarget === "claude" ? "claude" : "chatgpt",
+      });
+    });
   });
 }
 
@@ -208,14 +226,18 @@ async function startQuestionFlow({ isAuto }) {
     openImageTabOnce(qData.imageSrc);
   }
 
-  chrome.runtime.sendMessage({ type: "openChatGPTTab" }, () => {
-    setTimeout(() => {
-      chrome.runtime.sendMessage({
-        type: "sendQuestionToChatGPT",
-        question: qData,
-      });
-    }, 500);
-  });
+  chrome.runtime.sendMessage(
+    { type: "openAITab", target: settings.aiTarget },
+    () => {
+      setTimeout(() => {
+        chrome.runtime.sendMessage({
+          type: "sendQuestionToAI",
+          target: settings.aiTarget,
+          question: qData,
+        });
+      }, 500);
+    }
+  );
 
   return true;
 }
@@ -445,7 +467,7 @@ function openImageTabOnce(src) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "chatGPTResponse") {
+  if (message.type === "aiResponse") {
     try {
       const response = JSON.parse(message.response);
       const filled = fillAnswer(response.answer);

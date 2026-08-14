@@ -1,6 +1,16 @@
 let imageTabId = null;
-let chatgptTabId = null;
 let localTabId = null;
+
+const AI_TARGETS = {
+  chatgpt: { url: "https://chatgpt.com/", matchPattern: "https://chatgpt.com/*" },
+  claude: { url: "https://claude.ai/new", matchPattern: "https://claude.ai/*" },
+};
+
+const aiTabIds = { chatgpt: null, claude: null };
+
+function resolveTarget(name) {
+  return AI_TARGETS[name] ? name : "chatgpt";
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "openImageTab" && message.url) {
@@ -26,61 +36,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "openChatGPTTab") {
-    chrome.tabs.query({ url: "https://chatgpt.com/*" }, (tabs) => {
+  if (message.type === "openAITab") {
+    const target = resolveTarget(message.target);
+    const { url, matchPattern } = AI_TARGETS[target];
+
+    chrome.tabs.query({ url: matchPattern }, (tabs) => {
       if (tabs && tabs.length > 0) {
-        chatgptTabId = tabs[0].id;
-        if (chatgptTabId) {
-          chrome.tabs.update(chatgptTabId, { active: true }).catch(() => {});
+        aiTabIds[target] = tabs[0].id;
+        if (aiTabIds[target]) {
+          chrome.tabs.update(aiTabIds[target], { active: true }).catch(() => {});
         }
-        sendResponse({ received: true, tabId: chatgptTabId });
+        sendResponse({ received: true, tabId: aiTabIds[target] });
         return;
       }
 
-      chrome.tabs.create(
-        { url: "https://chatgpt.com/", active: true },
-        (tab) => {
-          if (tab && tab.id) {
-            chatgptTabId = tab.id;
-          }
-          sendResponse({ received: true, tabId: tab?.id || null });
+      chrome.tabs.create({ url, active: true }, (tab) => {
+        if (tab && tab.id) {
+          aiTabIds[target] = tab.id;
         }
-      );
+        sendResponse({ received: true, tabId: tab?.id || null });
+      });
     });
     return true;
   }
 
-  if (message.type === "sendQuestionToChatGPT") {
+  if (message.type === "sendQuestionToAI") {
+    const target = resolveTarget(message.target);
     if (sender.tab && sender.tab.id) {
       localTabId = sender.tab.id;
     }
 
-    const sendToChatGPT = (tabId) => {
+    const sendToTarget = (tabId) => {
       chrome.tabs.sendMessage(tabId, {
         type: "receiveQuestion",
         question: message.question,
       });
     };
 
-    if (chatgptTabId) {
-      sendToChatGPT(chatgptTabId);
+    if (aiTabIds[target]) {
+      sendToTarget(aiTabIds[target]);
       sendResponse({ received: true });
       return true;
     }
 
-    chrome.tabs.query({ url: "https://chatgpt.com/*" }, (tabs) => {
+    chrome.tabs.query({ url: AI_TARGETS[target].matchPattern }, (tabs) => {
       if (tabs && tabs.length > 0) {
-        chatgptTabId = tabs[0].id;
-        sendToChatGPT(chatgptTabId);
+        aiTabIds[target] = tabs[0].id;
+        sendToTarget(aiTabIds[target]);
         sendResponse({ received: true });
       } else {
-        sendResponse({ received: false, error: "ChatGPT tab not found" });
+        sendResponse({ received: false, error: `${target} tab not found` });
       }
     });
     return true;
   }
 
-  if (message.type === "chatGPTResponse") {
+  if (message.type === "aiResponse") {
     if (!localTabId) {
       sendResponse({ received: false });
       return false;
@@ -98,6 +109,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === imageTabId) imageTabId = null;
-  if (tabId === chatgptTabId) chatgptTabId = null;
   if (tabId === localTabId) localTabId = null;
+  for (const target of Object.keys(aiTabIds)) {
+    if (aiTabIds[target] === tabId) aiTabIds[target] = null;
+  }
 });

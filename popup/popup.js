@@ -1,11 +1,13 @@
 const DEFAULTS = {
   autoSubmit: false,
   fullAuto: false,
+  aiTarget: "chatgpt",
 };
 
 const elements = {
   autoSubmit: document.getElementById("autoSubmit"),
   fullAuto: document.getElementById("fullAuto"),
+  aiTarget: document.getElementById("aiTarget"),
   currentVersion: document.getElementById("current-version"),
   saveStatus: document.getElementById("save-status"),
 };
@@ -23,6 +25,10 @@ function applySettingsToUI(settings) {
   if (elements.autoSubmit) {
     elements.autoSubmit.checked = Boolean(settings.autoSubmit);
     elements.autoSubmit.disabled = false;
+  }
+
+  if (elements.aiTarget) {
+    elements.aiTarget.value = settings.aiTarget || DEFAULTS.aiTarget;
   }
 }
 
@@ -43,6 +49,19 @@ function loadSettings() {
 }
 
 function bindEvents() {
+  if (elements.aiTarget) {
+    elements.aiTarget.addEventListener("change", (event) => {
+      const aiTarget = event.target.value === "claude" ? "claude" : "chatgpt";
+      chrome.storage.sync.set({ aiTarget }, () => {
+        if (chrome.runtime.lastError) {
+          setStatus("Save failed");
+          return;
+        }
+        setStatus("Settings saved");
+      });
+    });
+  }
+
   if (elements.autoSubmit) {
     elements.autoSubmit.addEventListener("change", (event) => {
       const enabled = Boolean(event.target.checked);

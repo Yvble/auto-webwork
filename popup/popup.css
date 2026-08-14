@@ -127,3 +127,19 @@ footer {
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.field select {
+  background: var(--primary-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
