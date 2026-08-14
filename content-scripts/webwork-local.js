@@ -125,6 +125,7 @@ function bindFullAutoBar() {
         const state = getFullAutoState();
         if (state === FULL_AUTO_STATE_IDLE) {
           setFullAutoState(FULL_AUTO_STATE_RUNNING);
+          startQuestionFlow({ isAuto: true });
         }
       } else {
         setFullAutoState(FULL_AUTO_STATE_IDLE);
@@ -555,15 +556,16 @@ function bindManualProblemSelectionGuard() {
   );
 }
 
-function findNextProblemFromProblemList() {
-  const directNext =
-    document.querySelector(".problem-list li.currentProblem + li a[href]") ||
-    document.querySelector(".problem-list li.active + li a[href]");
-  if (directNext) return directNext;
+function findCurrentProblemListItem() {
+  const activeLink =
+    document.querySelector(".problem-list a.active") ||
+    document.querySelector(".problem-list li.currentProblem a, .problem-list li.active a");
+  if (activeLink) return activeLink.closest("li");
+  return document.querySelector(".problem-list li.currentProblem, .problem-list li.active");
+}
 
-  const current = document.querySelector(
-    ".problem-list li.currentProblem, .problem-list li.active"
-  );
+function findNextProblemFromProblemList() {
+  const current = findCurrentProblemListItem();
   if (!current) return null;
 
   let nextLi = current.nextElementSibling;
@@ -577,10 +579,8 @@ function findNextProblemFromProblemList() {
 }
 
 function isAtEndOfProblemList() {
-  const hasCurrent = Boolean(
-    document.querySelector(".problem-list li.currentProblem, .problem-list li.active")
-  );
-  if (!hasCurrent) return false;
+  const current = findCurrentProblemListItem();
+  if (!current) return false;
   return !findNextProblemFromProblemList();
 }
 
@@ -588,8 +588,11 @@ function findNextQuestionControl() {
   const nextFromList = findNextProblemFromProblemList();
   if (nextFromList) return nextFromList;
 
+  const navRegion = document.querySelector(
+    '[aria-label="problem navigation" i], .problem-nav, .navigation'
+  );
   const form = document.querySelector("#problemMainForm");
-  const scoped = form || document;
+  const scopes = [navRegion, form, document].filter(Boolean);
 
   const directCandidates = [
     "#nextProblem_id",
@@ -599,23 +602,27 @@ function findNextQuestionControl() {
     'button[rel="next"]',
   ];
 
-  for (const selector of directCandidates) {
-    const el = scoped.querySelector(selector);
-    if (el) return el;
+  for (const scope of scopes) {
+    for (const selector of directCandidates) {
+      const el = scope.querySelector(selector);
+      if (el) return el;
+    }
   }
 
-  const fuzzyCandidates = Array.from(
-    scoped.querySelectorAll('a, button, input[type="submit"], input[type="button"]')
-  );
+  for (const scope of scopes) {
+    const fuzzyCandidates = Array.from(
+      scope.querySelectorAll('a, button, input[type="submit"], input[type="button"]')
+    );
 
-  for (const el of fuzzyCandidates) {
-    const text = normalizeText(getElementText(el));
-    if (
-      text.includes("next problem") ||
-      text === "next" ||
-      text.includes("next pg")
-    ) {
-      return el;
+    for (const el of fuzzyCandidates) {
+      const text = normalizeText(getElementText(el));
+      if (
+        text.includes("next problem") ||
+        text === "next" ||
+        text.includes("next pg")
+      ) {
+        return el;
+      }
     }
   }
 
