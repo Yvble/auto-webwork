@@ -1,5 +1,5 @@
 let hasResponded = false;
-let messageCountAtQuestion = 0;
+let jsonBlockCountAtQuestion = 0;
 let observationStartTime = 0;
 let observationTimeout = null;
 let observer = null;
@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "receiveQuestion") {
     resetObservation();
 
-    messageCountAtQuestion = getAssistantMessages().length;
+    jsonBlockCountAtQuestion = getJsonCodeBlocks().length;
     hasResponded = false;
 
     insertQuestion(message.question)
@@ -158,10 +158,8 @@ function armManualSendObserver(inputArea, sendButton) {
   document.addEventListener("click", onDocClick, true);
 }
 
-function getAssistantMessages() {
-  const nodes = document.querySelectorAll(".font-claude-message");
-  if (nodes.length) return Array.from(nodes);
-  return Array.from(document.querySelectorAll('[data-is-streaming] .prose'));
+function getJsonCodeBlocks() {
+  return Array.from(document.querySelectorAll('code[class*="json" i]'));
 }
 
 function isResponseGenerating() {
@@ -182,24 +180,11 @@ function startObserving() {
   observer = new MutationObserver(() => {
     if (hasResponded) return;
 
-    const messages = getAssistantMessages();
-    if (!messages.length) return;
-    if (messages.length <= messageCountAtQuestion) return;
+    const blocks = getJsonCodeBlocks();
+    if (blocks.length <= jsonBlockCountAtQuestion) return;
 
-    const latestMessage = messages[messages.length - 1];
-    const codeBlocks = latestMessage.querySelectorAll("pre code");
-    let responseText = "";
-
-    for (const block of codeBlocks) {
-      if (block.className.includes("language-json")) {
-        responseText = block.textContent.trim();
-        break;
-      }
-    }
-
-    if (!responseText) {
-      responseText = latestMessage.textContent.trim();
-    }
+    const latestBlock = blocks[blocks.length - 1];
+    const responseText = latestBlock.textContent.trim();
 
     const quickMatch = window.AutoWebWork.tryParseAnswerJson(responseText);
     if (quickMatch && !hasResponded) {
@@ -214,9 +199,7 @@ function startObserving() {
     }
 
     if (!isResponseGenerating() && Date.now() - observationStartTime > 30000) {
-      const strictMatch = window.AutoWebWork.extractStrictAnswerJson(
-        latestMessage.textContent.trim()
-      );
+      const strictMatch = window.AutoWebWork.extractStrictAnswerJson(responseText);
       if (strictMatch && !hasResponded) {
         hasResponded = true;
         chrome.runtime.sendMessage({ type: "aiResponse", response: strictMatch });
